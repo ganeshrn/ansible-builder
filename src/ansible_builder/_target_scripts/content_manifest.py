@@ -41,7 +41,7 @@ from datetime import datetime, timezone
 try:
     import yaml
 except ImportError:  # pragma: no cover - present in every EE base image
-    yaml = None
+    yaml = None  # type: ignore[assignment]
 
 SCHEMA_VERSION = "1.0.0"
 TOOL_NAME = "ansible-builder-content-manifest"
@@ -543,7 +543,7 @@ def find_collections(collections_path: str, diagnostics: Diagnostics) -> list[tu
 
 def ansible_core_version() -> str | None:
     try:
-        from ansible.release import __version__ as core_version
+        from ansible.release import __version__ as core_version  # type: ignore[import-not-found]
         return core_version
     except Exception:  # noqa: BLE001 - any failure means "unknown"
         return None
