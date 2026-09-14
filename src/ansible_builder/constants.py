@@ -46,6 +46,24 @@ CONTEXT_FILES = {
 
 FINAL_IMAGE_BIN_PATH = "/opt/builder/bin"
 
+# Build-time content manifest.
+#
+# The manifest is generated inside the final image by that image's own ansible-core.
+# An EE ships a specific core, and collections are authored against it: plugin loading,
+# argument-spec handling and documentation-fragment resolution all vary between
+# versions, so enumerating content from outside with a different core can be quietly
+# wrong. Generating in place is correct by construction, and the cost is paid once at
+# build time rather than by every consumer.
+CONTENT_MANIFEST_SCRIPT = 'content_manifest.py'
+CONTENT_MANIFEST_PATH = '/usr/share/ansible/content-manifest.json'
+CONTENT_MANIFEST_DOCS_LEVELS = ('full', 'summary', 'none')
+DEFAULT_CONTENT_MANIFEST_DOCS = 'full'
+
+# Media type identifying the manifest as an OCI artifact. Carried on `artifactType`
+# and in annotations rather than on the layer: registries vary in how strictly they
+# police media types, and a custom layer type is not portable.
+CONTENT_MANIFEST_ARTIFACT_TYPE = 'application/vnd.ansible.content-manifest.v1+json'
+
 DEFAULT_EE_BASENAME = "execution-environment"
 YAML_FILENAME_EXTENSIONS = ('yml', 'yaml')
 

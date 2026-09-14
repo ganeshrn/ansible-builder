@@ -377,3 +377,99 @@ def test_prepare_introspect_assemble_steps(build_dir_and_ee_yml):
                                   f" --exclude-collection-reqs={constants.EXCL_COLLECTIONS_FILENAME}" \
                                   " --write-bindep=/tmp/src/bindep.txt --write-pip=/tmp/src/requirements.txt"
     assert expected_introspect_command in c.steps
+
+
+def test_content_manifest_step_default(build_dir_and_ee_yml):
+    """Generation is on by default: an EE that says nothing still gets a manifest."""
+    tmpdir, ee_path = build_dir_and_ee_yml("version: 3")
+    c = make_containerfile(tmpdir, ee_path, run_validate=True)
+    c._prepare_content_manifest_steps()
+    assert c.steps == [
+        f"RUN $PYCMD /output/scripts/{constants.CONTENT_MANIFEST_SCRIPT} generate"
+        f" --output {constants.CONTENT_MANIFEST_PATH}"
+        f" --docs {constants.DEFAULT_CONTENT_MANIFEST_DOCS}"
+        f" --quiet"
+    ]
+
+
+def test_content_manifest_step_disabled(build_dir_and_ee_yml):
+    ee_data = [
+        'version: 3',
+        'options:',
+        '  content_manifest:',
+        '    enabled: false',
+    ]
+    tmpdir, ee_path = build_dir_and_ee_yml("\n".join(ee_data))
+    c = make_containerfile(tmpdir, ee_path, run_validate=True)
+    c._prepare_content_manifest_steps()
+    assert not c.steps
+
+
+def test_content_manifest_step_options(build_dir_and_ee_yml):
+    ee_data = [
+        'version: 3',
+        'options:',
+        '  content_manifest:',
+        '    docs: summary',
+        '    path: /tmp/manifest.json',
+    ]
+    tmpdir, ee_path = build_dir_and_ee_yml("\n".join(ee_data))
+    c = make_containerfile(tmpdir, ee_path, run_validate=True)
+    c._prepare_content_manifest_steps()
+    assert c.steps == [
+        f"RUN $PYCMD /output/scripts/{constants.CONTENT_MANIFEST_SCRIPT} generate"
+        f" --output /tmp/manifest.json --docs summary --quiet"
+    ]
+
+
+def test_content_manifest_labels(build_dir_and_ee_yml):
+    """
+    Only build-time-known facts can be labels.
+
+    Counts and the ansible-core version cannot: a LABEL is fixed when this file is
+    written and the manifest does not exist until the build runs. They travel in the
+    referrer annotations instead.
+    """
+    tmpdir, ee_path = build_dir_and_ee_yml("version: 3")
+    c = make_containerfile(tmpdir, ee_path, run_validate=True)
+    c._prepare_label_steps()
+    assert c.steps == [
+        "LABEL ansible-execution-environment=true",
+        "LABEL io.ansible.content.manifest=true",
+        f"LABEL io.ansible.content.manifest.path={constants.CONTENT_MANIFEST_PATH}",
+    ]
+    assert not any('collections.count' in step for step in c.steps)
+
+
+def test_content_manifest_labels_disabled(build_dir_and_ee_yml):
+    ee_data = [
+        'version: 3',
+        'options:',
+        '  content_manifest:',
+        '    enabled: false',
+    ]
+    tmpdir, ee_path = build_dir_and_ee_yml("\n".join(ee_data))
+    c = make_containerfile(tmpdir, ee_path, run_validate=True)
+    c._prepare_label_steps()
+    assert c.steps == ["LABEL ansible-execution-environment=true"]
+
+
+def test_content_manifest_generated_before_output_purge(build_dir_and_ee_yml):
+    """
+    The generate step must come after append_final and before /output is removed.
+
+    After append_final so content added by custom steps is enumerated too; before the
+    purge because that is where the script lives. Getting the order wrong produces a
+    build that fails only when someone uses custom steps, or only when they do not.
+    """
+    tmpdir, ee_path = build_dir_and_ee_yml("version: 3")
+    c = make_containerfile(tmpdir, ee_path, run_validate=True)
+    c.prepare()
+
+    generate = next(i for i, s in enumerate(c.steps)
+                    if constants.CONTENT_MANIFEST_SCRIPT in s and 'generate' in s)
+    purge = c.steps.index("RUN rm -rf /output")
+    copy_scripts = next(i for i, s in enumerate(c.steps)
+                        if s.startswith('COPY') and '/output/scripts/' in s)
+
+    assert copy_scripts < generate < purge

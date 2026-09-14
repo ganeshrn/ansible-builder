@@ -487,6 +487,35 @@ builder runtime functionality. Valid keys for this section are:
       This sets the username or UID to use as the default user for the final container image.
       The default value ``1000``.
 
+    ``content_manifest``
+      Controls the build-time content manifest: an inventory of the collections,
+      plugins, roles, playbooks and Event-Driven Ansible content in the image, written
+      to :file:`/usr/share/ansible/content-manifest.json`.
+
+      The manifest is generated inside the final image using that image's own
+      ``ansible-core``. This is a correctness property, not a convenience. An execution
+      environment ships a specific ``ansible-core``, and collections are authored
+      against it: plugin loading, argument-spec handling and documentation-fragment
+      resolution all vary between versions, so enumerating the same image from outside
+      with a different ``ansible-core`` can produce results that are subtly wrong
+      rather than obviously missing.
+
+      A consumer — a catalog, a portal, an agent — can then read what is inside the
+      image from the registry rather than pulling it. See
+      :ref:`the publish command <publish_command>`.
+
+      ``enabled``
+        Whether to generate the manifest during the build. The default is ``True``.
+        Generation costs a few seconds and a few megabytes.
+
+      ``docs``
+        How much documentation to extract: ``full``, ``summary`` or ``none``. The
+        default is ``full``. ``none`` lists content without documenting it.
+
+      ``path``
+        Where to write the manifest inside the image. The default is
+        :file:`/usr/share/ansible/content-manifest.json`.
+
     ``tags``
       Specifies the names that are assigned to the resulting image if the build process completes successfully.
       The default value is ``ansible-execution-env:latest``.
@@ -507,6 +536,9 @@ Example ``options`` section:
         user: bob
         tags:
           - ee_development:latest
+        content_manifest:
+          enabled: true
+          docs: full
 
 .. _version:
 
