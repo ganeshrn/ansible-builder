@@ -245,6 +245,94 @@ The ``create`` command
 The :command:`ansible-builder create` command accepts an execution environment definition as an input and outputs the build context necessary for building an execution environment image. However, the ``create`` command *will not* build the execution environment image; this is useful for creating just the build context and a :file:`Containerfile` that can then be shared.
 
 
+.. _publish_command:
+
+The ``publish`` command
+-----------------------
+
+The :command:`ansible-builder publish` command pushes an execution environment image to
+an OCI registry, then publishes the :ref:`content manifest <builder_ee_definition>`
+generated during the build as an OCI *referrer* of that image.
+
+The manifest travels beside the image rather than inside it, which is what makes it
+cheap to read. A catalog that wants to know which collections and modules an execution
+environment contains fetches a referrer and one small blob — a few HTTP calls — instead
+of pulling an image measured in hundreds of megabytes.
+
+.. code::
+
+   $ ansible-builder publish quay.io/myorg/my-ee:latest
+
+The image reference must be fully qualified, because the registry to publish to is read
+from it.
+
+Publishing is deliberately separable from pushing. Use ``--skip-image-push`` to publish
+a manifest for an image that is already in the registry:
+
+.. code::
+
+   $ ansible-builder publish quay.io/myorg/my-ee:latest --skip-image-push
+
+.. note::
+
+   Registries vary in what they accept, and this command accommodates that rather than
+   assuming conformance. The manifest is packaged as a standard gzipped tar layer with
+   the Ansible artifact type carried on ``artifactType``, because some registries reject
+   custom layer media types; and a fallback tag holding an image index is always
+   published alongside the referrer, because some registries do not implement the
+   referrers API. Consumers discover the manifest by whichever path the registry
+   supports.
+
+Flags for the ``publish`` command
+----------------------------------
+
+``image``
+*********
+
+The fully qualified image reference to publish, for example
+``quay.io/myorg/my-ee:latest``. A positional argument, and the only required one.
+
+``--container-runtime``
+***********************
+
+The container runtime used to push the image and to read the manifest out of it.
+Defaults to :program:`podman` when available, otherwise :program:`docker`.
+
+``--manifest``
+**************
+
+Publish this manifest file instead of reading one out of the image. Useful when the
+manifest was produced separately, or when publishing for an image that cannot be run
+locally.
+
+``--manifest-path``
+*******************
+
+Where the manifest lives inside the image. Defaults to
+:file:`/usr/share/ansible/content-manifest.json`, matching the ``content_manifest.path``
+option in the definition file.
+
+``--skip-image-push``
+*********************
+
+Publish only the content manifest, leaving the image alone. Use this when the image is
+already in the registry.
+
+``--insecure``
+**************
+
+Use HTTP and skip TLS verification. Intended for local registries; do not use it against
+a registry you do not control.
+
+``--username`` and ``--password``
+*********************************
+
+Registry credentials. Both fall back to the :envvar:`ANSIBLE_BUILDER_REGISTRY_USERNAME`
+and :envvar:`ANSIBLE_BUILDER_REGISTRY_PASSWORD` environment variables, which is the
+better way to supply a token — a password passed on the command line lands in shell
+history and in the process list.
+
+
 The ``introspect`` command
 ---------------------------
 

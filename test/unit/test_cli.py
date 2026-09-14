@@ -8,6 +8,7 @@ from ansible_builder import constants
 from ansible_builder.main import AnsibleBuilder
 from ansible_builder.cli import parse_args, _should_disable_colors
 from ansible_builder.policies import PolicyChoices
+from ansible_builder.publisher import Publisher
 
 
 def prepare(args):
@@ -445,3 +446,20 @@ def test__should_disable_colors_tty_detection(isatty_result, expected, monkeypat
     # Mock sys.stdout.isatty to control TTY detection
     mocker.patch('sys.stdout.isatty', return_value=isatty_result)
     assert _should_disable_colors() == expected
+
+
+def test_publish_args_reach_the_publisher():
+    args = parse_args(['publish', 'quay.io/demo/ee:poc', '--insecure',
+                       '--skip-image-push', '--username', 'robot'])
+    publisher = Publisher(**vars(args))
+
+    assert (publisher.registry, publisher.repository, publisher.reference) == \
+        ('quay.io', 'demo/ee', 'poc')
+    assert publisher.insecure and publisher.skip_image_push
+    assert publisher.username == 'robot'
+    assert publisher.manifest_path == constants.CONTENT_MANIFEST_PATH
+
+
+def test_publish_requires_an_image():
+    with pytest.raises(SystemExit):
+        parse_args(['publish'])

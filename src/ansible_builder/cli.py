@@ -9,6 +9,7 @@ from . import constants
 from .exceptions import DefinitionError
 from .main import AnsibleBuilder
 from .policies import PolicyChoices
+from .publisher import Publisher
 from ._target_scripts.introspect import create_introspect_parser, run_introspect
 from .utils import configure_logger, deprecation_notice
 
@@ -94,6 +95,14 @@ def run():
             if action():
                 logger.log(constants.SUCCESS_LOGLEVEL,
                            "Complete! The build context can be found at: %s", os.path.abspath(ab.build_context))
+                sys.exit(0)
+        except DefinitionError as e:
+            logger.error(e.args[0])
+            sys.exit(1)
+
+    elif args.action == 'publish':
+        try:
+            if Publisher(**vars(args)).publish():
                 sys.exit(0)
         except DefinitionError as e:
             logger.error(e.args[0])
@@ -227,9 +236,62 @@ def add_container_options(parser):
                        help='The number of signatures that must successfully verify collections from '
                        'ansible-galaxy ~if there are any signatures provided~. See ansible-galaxy doc for more info.')
 
+    publish_command_parser = parser.add_parser(
+        'publish',
+        help='Pushes an image and its content manifest to a registry.',
+        description=(
+            'Pushes an execution environment image to an OCI registry, then publishes '
+            'the content manifest generated during the build as an OCI referrer of '
+            'that image. A catalog can then read what is inside the image — its '
+            'collections, plugins, roles and documentation — in a few HTTP calls '
+            'rather than by pulling the image.'
+        )
+    )
+
+    publish_command_parser.add_argument(
+        'image',
+        help='Fully qualified image reference to publish, for example '
+             'quay.io/myorg/my-ee:latest')
+
+    publish_command_parser.add_argument(
+        '--container-runtime',
+        choices=list(constants.runtime_files.keys()),
+        default=constants.default_container_runtime,
+        help='Specifies which container runtime to use (default: %(default)s)')
+
+    publish_command_parser.add_argument(
+        '--manifest',
+        help='Publish this manifest file instead of reading one out of the image.')
+
+    publish_command_parser.add_argument(
+        '--manifest-path',
+        default=constants.CONTENT_MANIFEST_PATH,
+        help='Path to the manifest inside the image (default: %(default)s)')
+
+    publish_command_parser.add_argument(
+        '--skip-image-push',
+        action='store_true',
+        help='Publish only the content manifest, for an image already in the registry.')
+
+    publish_command_parser.add_argument(
+        '--insecure',
+        action='store_true',
+        help='Use HTTP and skip TLS verification. For local registries only.')
+
+    publish_command_parser.add_argument(
+        '--username',
+        help='Registry username '
+             '(default: $ANSIBLE_BUILDER_REGISTRY_USERNAME)')
+
+    publish_command_parser.add_argument(
+        '--password',
+        help='Registry password or token. Prefer $ANSIBLE_BUILDER_REGISTRY_PASSWORD, '
+             'so the secret does not land in your shell history.')
+
     introspect_parser = create_introspect_parser(parser)
 
-    for n in [create_command_parser, build_command_parser, introspect_parser]:
+    for n in [create_command_parser, build_command_parser, publish_command_parser,
+              introspect_parser]:
 
         n.add_argument('-v', '--verbosity',
                        dest='verbosity',
