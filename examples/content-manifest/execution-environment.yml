@@ -1,0 +1,53 @@
+# Sample execution environment with a build-time content manifest.
+#
+# Builds an EE containing ansible.utils and ansible.netcommon, generates an inventory
+# of everything inside it using the image's own ansible-core, and leaves that inventory
+# at /usr/share/ansible/content-manifest.json ready to publish as an OCI referrer.
+#
+#   ansible-builder build -t localhost:8080/demo/network-ee:sample --container-runtime podman
+#   ansible-builder publish localhost:8080/demo/network-ee:sample --insecure
+#
+# See ../../CONTENT_MANIFEST_README.md, or ./README.md for the full local loop.
+
+version: 3
+
+images:
+  base_image:
+    # Fedora rather than quay.io/ansible/ansible-runner:latest, which is four years old
+    # and whose ansible-galaxy fails against the Galaxy v3 API. community-ee-base is not
+    # publicly pullable.
+    name: quay.io/fedora/fedora:41
+
+dependencies:
+  galaxy:
+    collections:
+      - name: ansible.utils
+      - name: ansible.netcommon
+
+  # ansible-core comes from the Fedora RPM below, not from pip: the cryptography
+  # aarch64 wheel uses instructions above the podman machine's CPU baseline, and pip
+  # installing ansible-core dies with SIGILL (rc=132) on Apple silicon.
+  #
+  # ansible-runner is pure Python, so pip is safe — and it must be present or the
+  # final check_ansible step fails.
+  ansible_runner:
+    package_pip: ansible-runner
+
+  system:
+    # ncclient and lxml, which ansible.netcommon pulls in, need these to build.
+    - gcc [platform:rpm compile]
+    - python3-devel [platform:rpm compile]
+    - libxml2-devel [platform:rpm compile]
+    - libxslt-devel [platform:rpm compile]
+
+additional_build_steps:
+  prepend_base:
+    - RUN $PKGMGR install -y ansible-core python3-pip && $PKGMGR clean all
+
+options:
+  # The default is enabled with docs: full. Stated here because this sample exists to
+  # show the knob.
+  content_manifest:
+    enabled: true
+    docs: full
+    path: /usr/share/ansible/content-manifest.json

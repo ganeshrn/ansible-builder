@@ -202,6 +202,11 @@ class Containerfile:
 
         self._insert_custom_steps('append_final')
 
+        # After append_final, so that content added by custom steps is enumerated too,
+        # and before /output is purged, since that is where the script lives.
+        if self.definition.version >= 3:
+            self._prepare_content_manifest_steps()
+
         # Purge the temporary /output directory used in intermediate stages
         self.steps.append("RUN rm -rf /output")
 
@@ -314,7 +319,8 @@ class Containerfile:
         scriptres = importlib.resources.files('ansible_builder._target_scripts')
         script_files = (
             'assemble', 'install-from-bindep', 'introspect.py', 'check_galaxy',
-            'check_ansible', 'pip_install', 'entrypoint'
+            'check_ansible', 'pip_install', 'entrypoint',
+            constants.CONTENT_MANIFEST_SCRIPT,
         )
         for script in script_files:
             with importlib.resources.as_file(scriptres / script) as script_path:
@@ -404,10 +410,44 @@ class Containerfile:
             f"WORKDIR {workdir}"
         ])
 
+    def _prepare_content_manifest_steps(self) -> None:
+        """
+        Generate the content manifest inside the final image.
+
+        Runs with the image's own ansible-core, which is the whole point: an EE ships a
+        specific core, and extracting documentation with a different one resolves
+        fragments, plugin loading and argument specs differently. The output can be
+        quietly wrong, which is worse than being absent.
+        """
+        manifest = self.definition.options['content_manifest']
+        if not manifest['enabled']:
+            return
+
+        script = f"/output/scripts/{constants.CONTENT_MANIFEST_SCRIPT}"
+        self.steps.append(
+            f"RUN $PYCMD {script} generate"
+            f" --output {manifest['path']}"
+            f" --docs {manifest['docs']}"
+            f" --quiet"
+        )
+
     def _prepare_label_steps(self) -> None:
         self.steps.extend([
             "LABEL ansible-execution-environment=true",
         ])
+
+        manifest = self.definition.options.get('content_manifest', {})
+        if self.definition.version >= 3 and manifest.get('enabled'):
+            # Only facts known before the build can be labels — a LABEL directive is
+            # fixed when this file is written, and the manifest does not exist until
+            # the build runs. Collection counts and the ansible-core version therefore
+            # travel in the OCI referrer's annotations, not here. These labels exist so
+            # a consumer can tell, from the config blob alone and without fetching
+            # anything else, that a manifest is present and where to find it.
+            self.steps.extend([
+                "LABEL io.ansible.content.manifest=true",
+                f"LABEL io.ansible.content.manifest.path={manifest['path']}",
+            ])
 
     def _prepare_build_context(self) -> None:
         deps: list[str] = []

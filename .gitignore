@@ -36,3 +36,7 @@ venv/
 # Demo files
 /demo/artifacts
 /demo/daemon.log
+
+# Build context and extracted manifest produced by examples/content-manifest
+examples/*/context/
+examples/*/content-manifest.json
